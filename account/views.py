@@ -4,9 +4,13 @@ from rest_framework import status
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from .serializers import MyUserSerializer, UserLoginSerializer, UserProfileSerializer, ChangePasswordSerializer
+from .serializers import MyUserSerializer, UserLoginSerializer, UserProfileSerializer, ChangePasswordSerializer, \
+    SendPasswordResetEmailSerializer, UserPasswordResetSerializer
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.exceptions import AuthenticationFailed
+
+from .utils import Utils
+
 
 def get_tokens_for_user(user):
     if not user.is_active:
@@ -75,11 +79,36 @@ class ChangePasswordView(APIView):
 
         return Response({"detail": "Password updated"}, status=status.HTTP_200_OK)
 
-"""class SendPasswordResetEmailApiView(APIView):
-    permission_classes = [IsAuthenticated]
+class SendPasswordResetEmailApiView(APIView):
+    permission_classes = []
+
     def post(self, request, *args, **kwargs):
         serializer = SendPasswordResetEmailSerializer(data=request.data)
-        if serializer.is_valid(raise_exception=True):
-            return Response({"msg": "Reset password send your email. please checked your email please."},
-                            status=status.HTTP_400_BAD_REQUEST)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)"""
+        serializer.is_valid(raise_exception=True)
+        link = serializer.validated_data["reset_link"]
+        to_email = serializer.validated_data["email"]
+
+        Utils.send_email({
+            "subject": "Password reset",
+            "body": f"Reset your password using this link:\n{link}",
+            "to_email": to_email,
+        })
+        return Response(
+            {"detail": "Reset email sent", "link": link},
+            status=status.HTTP_200_OK,
+        )
+
+class UserPasswordResetView(APIView):
+    permission_classes = []
+    def post(self, request, uuid, token, format=None):
+        ser = UserPasswordResetSerializer(
+            data=request.data,
+            context={"uuid": uuid, "token": token}
+        )
+        ser.is_valid(raise_exception=True)
+
+        user = ser.context["user"]
+        user.set_password(ser.validated_data["password"])
+        user.save(update_fields=["password"])
+
+        return Response({"detail": "Password reset successful"}, status=status.HTTP_200_OK)
